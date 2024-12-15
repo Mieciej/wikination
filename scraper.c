@@ -32,7 +32,7 @@ int main() {
     } else {
       printf("Received HTML data:\n%s\n", data);
     }
-    const char *pattern = "<a[[:space:]]+([^>]*[[:space:]])?href=(\"|')(/wiki/[^\"']*)\\2";
+    const char *pattern = "<a[[:space:]]+([^>]*[[:space:]])?href=(\"|')(/wiki/[^\"':]*)\\2";
     regex_t regex;
     regmatch_t matches[4];
     if (regcomp(&regex, pattern, REG_EXTENDED)) {
