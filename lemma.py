@@ -26,7 +26,7 @@ stopwords = [
     "why", "why's", "with", "won't", "would", "wouldn't", "you", "you'd", "you'll", "you're", "you've", 
     "your", "yours", "yourself", "yourselves"
 ]
-single_letter_languages = ["C", "R", "J", "K", "Q", "S"]
+single_letter_languages = ["c", "r", "j", "k", "q", "s"]
 
 nltk.download('stopwords', download_dir="./nltk_data")
 
@@ -36,12 +36,10 @@ def is_number(s):
 with open("text/CLion") as file:
     tokens = word_tokenize(file.read())
     for token in tokens:
-        lemma = wordnet.lemmatize(token, pos="n")
-
-
-        if lemma not in stopwords and lemma not in addons and not (len(lemma)==1 and lemma not in single_letter_languages) and not (is_number(lemma) and len(lemma) !=4):
+        token = token.lower()
+        if token not in stopwords and token not in addons and not (len(token)==1 and token not in single_letter_languages) and not (is_number(token) and len(token) !=4):
+            lemma = wordnet.lemmatize(token)
             # if the number is not a year
-
             print(token, lemma)
 
 

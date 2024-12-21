@@ -8,7 +8,7 @@ import queue
 import sys
 import os
 
-N_SITES = 1000
+N_SITES = 10000
 
 
 downloaded = set()
