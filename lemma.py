@@ -1,4 +1,5 @@
 import nltk
+import os
 from nltk.stem import WordNetLemmatizer
 from nltk.tokenize import word_tokenize
 
@@ -33,13 +34,23 @@ nltk.download('stopwords', download_dir="./nltk_data")
 wordnet = WordNetLemmatizer()
 def is_number(s):
     return s.isdigit() or (s.startswith('-') and s[1:].isdigit())
-with open("text/CLion") as file:
-    tokens = word_tokenize(file.read())
-    for token in tokens:
-        token = token.lower()
-        if token not in stopwords and token not in addons and not (len(token)==1 and token not in single_letter_languages) and not (is_number(token) and len(token) !=4):
-            lemma = wordnet.lemmatize(token)
-            # if the number is not a year
-            print(token, lemma)
 
+sites = os.listdir("text")
+unique_words = set()
+for i, site in enumerate(sites):
+    with open("text/"+site) as file:
+        tokens = word_tokenize(file.read())
+        with open("lemma/"+site, "w") as out_file:
+            for token in tokens:
+                token = token.lower()
+                if token not in stopwords and token not in addons and not (len(token)==1 and token not in single_letter_languages) and not (is_number(token) and len(token) !=4):
+                    lemma = wordnet.lemmatize(token)
+                    out_file.write(lemma+"\n")
+                    unique_words.add(lemma)
+    print(f"{i+1}/{len(sites)}")
+
+with open("lemma/dict.txt", "w") as dict_file:
+    dict_file.write(str(len(unique_words))+'\n')
+    for word in sorted(unique_words):
+        dict_file.write(word+'\n')
 
