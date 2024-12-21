@@ -15,7 +15,7 @@ void check_resut(int rc) {
 }
 
 
-int main(){
+int main(int argc, char** argv){
   int rc = sqlite3_open("bow.db", &db);
   if (rc) {
     std::cerr << "Can't open database: " << sqlite3_errmsg(db) << std::endl;
@@ -76,22 +76,38 @@ int main(){
       }
     }
     sqlite3_finalize(stmt);
-  }
-  for (int i = 0; i < n_docs; i++) {
-    for (int j = 0; j < n_terms; j++) {
-      bag_of_words[i][j] /= max_freq[i];
+    for (int i = 0; i < n_docs; i++) {
+      for (int j = 0; j < n_terms; j++) {
+        bag_of_words[i][j] /= max_freq[i];
+      }
     }
   }
-  for (int i = 0; i < n_docs; i++) {
-    std::cout << bag_of_words[i][0] << " ";
-    std::cout << bag_of_words[i][1] << " ";
-    std::cout << bag_of_words[i][2] << " ";
-    std::cout << bag_of_words[i][4] << " ";
-    std::cout << std::endl;
+  double* query = new double[n_terms]();
+  for (int i = 1; i < argc; i++){
+    const char* query = "SELECT t1.word_id, t1.frequency \
+      FROM bag_of_words t1 JOIN documents t2 \
+      WHERE t1.doc_id = t2.doc_id and t2.doc_name = ?;";
+    sqlite3_stmt* stmt;
+    rc = sqlite3_prepare_v2(db, query, -1, &stmt, 0);
+    check_resut(rc);
+    sqlite3_bind_text(stmt, 1, argv[i], -1, SQLITE_STATIC);
+    bool found = false;
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
+      found = true;
+      int word_id = sqlite3_column_int(stmt, 0);
+      int freq = sqlite3_column_int(stmt, 1);
+      query[word_id_map[word_id]] +=1;
+    }
+    sqlite3_finalize(stmt);
+    if (!found) {
+      std::cerr << "Document " << argv[i] << " not found." << std::endl;
+    }
+
   }
 
   sqlite3_close(db);
   delete[] mem;
   delete[] max_freq;
+  delete[] query;
   return 0;
 }

@@ -12,7 +12,7 @@ import nltk
 from nltk.stem import WordNetLemmatizer
 from nltk.tokenize import word_tokenize
 
-N_SITES = 10
+N_SITES = 1000
 
 con = sqlite3.connect("bow.db")
 cur = con.cursor()
