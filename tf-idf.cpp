@@ -60,7 +60,7 @@ int main(){
   for (int i = 0; i < n_docs; i++) {
     bag_of_words[i] = &mem[i*n_terms];
   }
-  int terms_eval = 0;
+  double* max_freq = new double[n_docs]();
   {
     const char* query = "SELECT doc_id, word_id, frequency FROM bag_of_words;";
     sqlite3_stmt* stmt;
@@ -71,15 +71,27 @@ int main(){
       int word_id = sqlite3_column_int(stmt, 1);
       int freq = sqlite3_column_int(stmt, 2);
       bag_of_words[doc_id_map[doc_id]][word_id_map[word_id]] = (double)freq * inv_tf[word_id_map[word_id]];
-      terms_eval++;
+      if (freq > max_freq[doc_id_map[doc_id]]) {
+        max_freq[doc_id_map[doc_id]] = freq;
+      }
     }
     sqlite3_finalize(stmt);
   }
   for (int i = 0; i < n_docs; i++) {
-    std::cout << bag_of_words[i][0] << std::endl;
+    for (int j = 0; j < n_terms; j++) {
+      bag_of_words[i][j] /= max_freq[i];
+    }
+  }
+  for (int i = 0; i < n_docs; i++) {
+    std::cout << bag_of_words[i][0] << " ";
+    std::cout << bag_of_words[i][1] << " ";
+    std::cout << bag_of_words[i][2] << " ";
+    std::cout << bag_of_words[i][4] << " ";
+    std::cout << std::endl;
   }
 
   sqlite3_close(db);
   delete[] mem;
+  delete[] max_freq;
   return 0;
 }
