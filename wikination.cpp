@@ -58,17 +58,20 @@ int main(int argc, char** argv){
   int n_terms = 0;
   std::unordered_map<int, int> word_id_map;
   std::vector<double> inv_tf;
+  std::vector<std::string> words;
   {
-    const char* query = "SELECT word_id, frequency FROM words;";
+    const char* query = "SELECT word_id, frequency, word FROM words;";
     sqlite3_stmt* stmt;
     rc = sqlite3_prepare_v2(db, query, -1, &stmt, 0);
     check_resut(rc);
     while (sqlite3_step(stmt) == SQLITE_ROW) {
       int word_id = sqlite3_column_int(stmt, 0);
       int freq = sqlite3_column_int(stmt, 1);
+      std::string word((const char*)sqlite3_column_text(stmt, 2));
       word_id_map[word_id] = n_terms++;
       double it = log((double)n_docs/(double)freq);
       inv_tf.push_back(it);
+      words.push_back(word);
     }
     sqlite3_finalize(stmt);
   }
@@ -111,6 +114,9 @@ int main(int argc, char** argv){
   for (int i = 0; i < n_docs; i++){
     bow_lengths[i] = length(bag_of_words[i], n_terms);
   }
+  bool selected_history[n_docs] = {false} ;
+  bool new_query = false;
+  bool something_in_history = false;
 
   SDL_Init(SDL_INIT_EVERYTHING);
 
@@ -128,9 +134,6 @@ int main(int argc, char** argv){
   ImGui::StyleColorsLight();
   ImGui_ImplSDL2_InitForSDLRenderer(window, renderer);
   ImGui_ImplSDLRenderer2_Init(renderer);
-  bool selected_history[n_docs] = {false} ;
-  bool new_query = false;
-  bool something_in_history = false;
   while(true){
     SDL_Event event;
     while(SDL_PollEvent(&event)){
@@ -176,6 +179,9 @@ int main(int argc, char** argv){
         }
         double q_len = length(user_query, n_terms);
         for (int i = 0; i < n_docs; i++){
+          if(selected_history[i]){
+            continue;
+          }
           double dot_prod = 0.0;
           for (int j = 0; j < n_terms; j++) {
             dot_prod += bag_of_words[i][j] * user_query[j];
@@ -226,6 +232,9 @@ int main(int argc, char** argv){
         }
         if(ImGui::Begin("Ranking")){
           for (int i = 0; i < n_docs; i++) {
+            if(selected_history[order[i]]){
+              continue;
+            }
             ImGui::Text("%s: %lf", doc_names[order[i]].c_str(), scores[order[i]]);
           }
           ImGui::End();
