@@ -4,6 +4,8 @@
 #include <unordered_map>
 #include <vector>
 #include <cmath>
+#include <map>
+#include <string>
 
 sqlite3* db;
 void check_resut(int rc) {
@@ -31,13 +33,16 @@ int main(int argc, char** argv){
 
   int n_docs = 0;
   std::unordered_map<int, int> doc_id_map;
+  std::vector<std::string> doc_names;
   {
-    const char* query = "SELECT doc_id FROM documents;";
+    const char* query = "SELECT doc_id, doc_name FROM documents;";
     sqlite3_stmt* stmt;
     rc = sqlite3_prepare_v2(db, query, -1, &stmt, 0);
     check_resut(rc);
     while (sqlite3_step(stmt) == SQLITE_ROW) {
       int doc_id = sqlite3_column_int(stmt, 0);
+      std::string doc_name((const char*)sqlite3_column_text(stmt, 1));
+      doc_names.push_back(doc_name);
       doc_id_map[doc_id] = n_docs++;
 
     }
@@ -136,7 +141,7 @@ int main(int argc, char** argv){
   }
   for (int i = 0; i < n_docs; i++){
     if (scores[i] > 0) {
-      std::cout << scores[i] << std::endl;
+      std::cout << doc_names[i] <<": "<< scores[i] << std::endl;
     }
   }
   sqlite3_close(db);
