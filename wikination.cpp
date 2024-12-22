@@ -13,6 +13,13 @@ void check_resut(int rc) {
     std::exit(1);
   }
 }
+double length(double* v, int size) {
+  double total = 0.0;
+  for(int i = 0; i < size; i++) {
+    total += v[i] * v[i];
+  }
+  return sqrt(total);
+}
 
 
 int main(int argc, char** argv){
@@ -60,8 +67,8 @@ int main(int argc, char** argv){
   for (int i = 0; i < n_docs; i++) {
     bag_of_words[i] = &mem[i*n_terms];
   }
-  double* max_freq = new double[n_docs]();
   {
+    double* max_freq = new double[n_docs]();
     const char* query = "SELECT doc_id, word_id, frequency FROM bag_of_words;";
     sqlite3_stmt* stmt;
     rc = sqlite3_prepare_v2(db, query, -1, &stmt, 0);
@@ -81,33 +88,60 @@ int main(int argc, char** argv){
         bag_of_words[i][j] /= max_freq[i];
       }
     }
+    delete[] max_freq;
   }
-  double* query = new double[n_terms]();
-  for (int i = 1; i < argc; i++){
-    const char* query = "SELECT t1.word_id, t1.frequency \
-      FROM bag_of_words t1 JOIN documents t2 \
-      WHERE t1.doc_id = t2.doc_id and t2.doc_name = ?;";
-    sqlite3_stmt* stmt;
-    rc = sqlite3_prepare_v2(db, query, -1, &stmt, 0);
-    check_resut(rc);
-    sqlite3_bind_text(stmt, 1, argv[i], -1, SQLITE_STATIC);
-    bool found = false;
-    while (sqlite3_step(stmt) == SQLITE_ROW) {
-      found = true;
-      int word_id = sqlite3_column_int(stmt, 0);
-      int freq = sqlite3_column_int(stmt, 1);
-      query[word_id_map[word_id]] +=1;
+  double* user_query = new double[n_terms]();
+  {
+    for (int i = 1; i < argc; i++){
+      const char* query = "SELECT t1.word_id, t1.frequency \
+                           FROM bag_of_words t1 JOIN documents t2 \
+                           WHERE t1.doc_id = t2.doc_id and t2.doc_name = ?;";
+      sqlite3_stmt* stmt;
+      rc = sqlite3_prepare_v2(db, query, -1, &stmt, 0);
+      check_resut(rc);
+      sqlite3_bind_text(stmt, 1, argv[i], -1, SQLITE_STATIC);
+      bool found = false;
+      while (sqlite3_step(stmt) == SQLITE_ROW) {
+        found = true;
+        int word_id = sqlite3_column_int(stmt, 0);
+        int freq = sqlite3_column_int(stmt, 1);
+        user_query[word_id_map[word_id]] +=freq;
+      }
+      sqlite3_finalize(stmt);
+      if (!found) {
+        std::cerr << "Document " << argv[i] << " not found." << std::endl;
+      }
     }
-    sqlite3_finalize(stmt);
-    if (!found) {
-      std::cerr << "Document " << argv[i] << " not found." << std::endl;
+    double max_freq = -1.0;
+    for(int i = 0; i < n_terms; i++) {
+      double freq = user_query[i];
+      if (freq > max_freq) {
+        max_freq = freq;
+      }
+      user_query[i] = freq * inv_tf[i];
     }
-
+    for(int i = 0; i < n_terms; i++) {
+      user_query[i] /= max_freq;
+    }
   }
-
+  double *scores = new double[n_docs];
+  double q_len = length(user_query, n_terms);
+  for (int i = 0; i < n_docs; i++){
+    double dot_prod = 0.0;
+    double d_len = length(bag_of_words[i], n_terms);
+    for (int j = 0; j < n_terms; j++) {
+      dot_prod += bag_of_words[i][j] * user_query[j];
+    }
+    scores[i] = dot_prod / (d_len * q_len);
+  }
+  for (int i = 0; i < n_docs; i++){
+    if (scores[i] > 0) {
+      std::cout << scores[i] << std::endl;
+    }
+  }
   sqlite3_close(db);
   delete[] mem;
-  delete[] max_freq;
-  delete[] query;
+  delete[] user_query;
+  delete[] scores;
   return 0;
 }
