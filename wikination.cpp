@@ -104,11 +104,11 @@ int main(int argc, char** argv){
     }
     delete[] max_freq;
   }
-  std::vector<int> order;
   double* user_query = new double[n_terms]();
   double *scores = new double[n_docs];
+  std::vector<int> document_order;
   for (int i = 0; i < n_docs; i++){
-    order.push_back(i);
+    document_order.push_back(i);
   }
   double *bow_lengths = new double[n_terms]();
   for (int i = 0; i < n_docs; i++){
@@ -117,7 +117,13 @@ int main(int argc, char** argv){
   bool selected_history[n_docs] = {false} ;
   bool new_query = false;
   bool something_in_history = false;
-
+  int selected_document = -1;
+  bool selected_document_changed = false;
+  double *selected_document_word_contrib = new double[n_terms];
+  std::vector<int> word_order;
+  for (int i = 0; i < n_terms; i++){
+    word_order.push_back(i);
+  }
   SDL_Init(SDL_INIT_EVERYTHING);
 
   SDL_Window* window = SDL_CreateWindow(
@@ -144,6 +150,7 @@ int main(int argc, char** argv){
       if(new_query){
         new_query = false;
         something_in_history = false;
+        selected_document = -1;
         for(int i = 0; i < n_terms; i++) {
           user_query[i] = 0.0;
         }
@@ -188,9 +195,25 @@ int main(int argc, char** argv){
           }
           scores[i] = dot_prod / (bow_lengths[i] * q_len);
         }
-        std::sort(order.begin(), order.end(), [&scores](int a, int b){
+        std::sort(document_order.begin(), document_order.end(), [&scores](int a, int b){
             return scores[a] > scores[b];
             });
+      }
+      if (selected_document_changed) {
+        selected_document_changed = false;
+        double total = 0.0;
+        for (int j = 0; j < n_terms; j++) {
+          double dot = bag_of_words[selected_document][j] * user_query[j];
+          selected_document_word_contrib[j] = dot;
+          total += dot;
+        }
+        for (int j = 0; j < n_terms; j++) {
+          selected_document_word_contrib[j] /= total;
+        }
+        std::sort(word_order.begin(), word_order.end(), [&selected_document_word_contrib](int a, int b){
+            return selected_document_word_contrib[a] > selected_document_word_contrib[b];
+        });
+
       }
 
 
@@ -211,8 +234,8 @@ int main(int argc, char** argv){
           ImGui::SameLine();
           ImGui::Text("%s", doc_names[i].c_str());
         }
-        ImGui::End();
       }
+      ImGui::End();
 
       if(something_in_history){
         if(ImGui::Begin("History")){
@@ -228,17 +251,47 @@ int main(int argc, char** argv){
             ImGui::SameLine();
             ImGui::Text("%s", doc_names[i].c_str());
           }
-          ImGui::End();
         }
+        ImGui::End();
         if(ImGui::Begin("Ranking")){
           for (int i = 0; i < n_docs; i++) {
-            if(selected_history[order[i]]){
+            if(selected_history[document_order[i]]){
               continue;
             }
-            ImGui::Text("%s: %lf", doc_names[order[i]].c_str(), scores[order[i]]);
+            char label[64];
+            snprintf(label, sizeof(label), "%s %lf", doc_names[document_order[i]].c_str(), scores[document_order[i]]);
+            if(ImGui::Selectable(label, selected_document == i)) {
+              if (selected_document == i) {
+                selected_document = -1;
+              } else {
+                selected_document = i;
+                selected_document_changed = true;
+              }
+            }
           }
-          ImGui::End();
         }
+        ImGui::End();
+      }
+      if(selected_document != -1) {
+        if(ImGui::Begin("Word Score Contribution")){
+          for (int i = 0; i < n_terms; i++) {
+            int idx = word_order[i];
+            double contrib = selected_document_word_contrib[idx];
+            if (contrib == 0.0) {
+              break;
+            }
+            ImGui::Text("%s", words[idx].c_str());
+            ImGui::SameLine();
+            float margin = 125.0f;
+            ImGui::SetCursorPosX(ImGui::GetContentRegionMax().x - margin);
+            ImGui::PushStyleColor(ImGuiCol_PlotHistogram, ImVec4(0.8f-contrib, 0.2f + contrib, 0.0f, 1.0f)); 
+            char text[32];
+            snprintf(text, sizeof(text), "%.3lf%%", contrib * 100.0);
+            ImGui::ProgressBar(contrib, ImVec2(margin, 20), text);
+            ImGui::PopStyleColor();
+          }
+        }
+        ImGui::End();
       }
 
 
@@ -260,5 +313,6 @@ int main(int argc, char** argv){
     delete[] mem;
     delete[] user_query;
     delete[] scores;
+    delete[] selected_document_word_contrib;
     return 0;
 }
