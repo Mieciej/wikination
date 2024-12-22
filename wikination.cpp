@@ -6,6 +6,7 @@
 #include <cmath>
 #include <map>
 #include <string>
+#include <algorithm>
 
 sqlite3* db;
 void check_resut(int rc) {
@@ -139,10 +140,16 @@ int main(int argc, char** argv){
     }
     scores[i] = dot_prod / (d_len * q_len);
   }
+  std::vector<int> keys;
   for (int i = 0; i < n_docs; i++){
-    if (scores[i] > 0) {
-      std::cout << doc_names[i] <<": "<< scores[i] << std::endl;
-    }
+    keys.push_back(i);
+  }
+  std::sort(keys.begin(), keys.end(), [&scores](int a, int b){
+      return scores[a] > scores[b];
+      });
+
+  for (int i =  0; i < 20; i++) {
+    std::cout << doc_names[keys[i]] << ": " << scores[keys[i]] << std::endl;
   }
   sqlite3_close(db);
   delete[] mem;
