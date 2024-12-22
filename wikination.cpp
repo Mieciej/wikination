@@ -7,6 +7,11 @@
 #include <map>
 #include <string>
 #include <algorithm>
+#include "imgui.h"
+#include "imgui_impl_sdl2.h"
+#include "imgui_impl_sdlrenderer2.h"
+#include <SDL2/SDL.h>
+
 
 sqlite3* db;
 void check_resut(int rc) {
@@ -152,8 +157,51 @@ int main(int argc, char** argv){
     std::cout << doc_names[keys[i]] << ": " << scores[keys[i]] << std::endl;
   }
   sqlite3_close(db);
-  delete[] mem;
-  delete[] user_query;
-  delete[] scores;
-  return 0;
+  SDL_Init(SDL_INIT_EVERYTHING);
+
+  SDL_Window* window = SDL_CreateWindow(
+      "SDL2 It's Works!",
+      50, 30,
+      1280, 720,
+      SDL_WINDOW_SHOWN
+      );
+
+  SDL_Renderer * renderer = SDL_CreateRenderer(window, -1, 0);
+  IMGUI_CHECKVERSION();
+  ImGui::CreateContext();
+  ImGuiIO& io = ImGui::GetIO(); (void)io;
+  ImGui::StyleColorsLight();
+  ImGui_ImplSDL2_InitForSDLRenderer(window, renderer);
+  ImGui_ImplSDLRenderer2_Init(renderer);
+  bool show_demo_window = true;
+  while(true){
+    SDL_Event event;
+    while(SDL_PollEvent(&event)){
+      ImGui_ImplSDL2_ProcessEvent(&event);
+      if( event.type == SDL_QUIT ){
+        goto finish;
+      }
+      ImGui_ImplSDLRenderer2_NewFrame();
+      ImGui_ImplSDL2_NewFrame();
+      ImGui::NewFrame();
+      if (show_demo_window)
+          ImGui::ShowDemoWindow(&show_demo_window);
+      ImGui::Render();
+      SDL_RenderClear(renderer);
+      SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
+      ImGui_ImplSDLRenderer2_RenderDrawData(ImGui::GetDrawData(), renderer);
+      SDL_RenderPresent(renderer);
+    }
+  }
+  finish:
+    ImGui_ImplSDLRenderer2_Shutdown();
+    ImGui_ImplSDL2_Shutdown();
+    ImGui::DestroyContext();
+    SDL_DestroyRenderer(renderer);
+    SDL_DestroyWindow(window);
+    SDL_Quit();
+    delete[] mem;
+    delete[] user_query;
+    delete[] scores;
+    return 0;
 }
