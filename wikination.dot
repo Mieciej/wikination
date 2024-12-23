@@ -1,0 +1,14 @@
+digraph G {
+  I [label="Construct inverse document frequency vector", shape=box];
+  M [label="Construct TF-IDF matrix for all articles", shape=box];
+  H [label="Combine user history into a signle document", shape=box];
+  V [label="Create TF-IDF vector for user history", shape=box];
+  C [label="Calculate cosine similarity", shape=box];
+  R [label="Recommend most similar documents", shape=box];
+  I -> M;
+  H -> V;
+  I -> V;
+  V -> C;
+  M -> C;
+  C -> R;
+}

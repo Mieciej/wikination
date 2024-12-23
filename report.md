@@ -48,28 +48,56 @@ The representation is then stored in `sqlite3` database.
 
 ##### Database schema
 
-###### `words` table
+`words` table:
 
 |word_id|word|frequency|
 |------|---|---|
 |id|actual term content| how many documents contain the term|
 
-###### `documents` table
+`documents` table
 
 |document_id|doc_name|doc_text|
 |------|---|---|
 |id|document name (e.g. `/wiki/ALGOL`)| raw html document contents|
 
 
-##### `bag_of_words` table
+`bag_of_words` table
 
 |document_id|word_id|frequency|
 |---|---|---|
-|foreign key|foreign key|how many times given term occurs in a given document|
+|foreign key|foreign key|how many times a given term occurs in a given document|
 
 
+### wikination
+
+Wikination is a GUI that interacts with the database and allows user to receive article recommendations based on a user history.
+
+![Wikination recommendation pipeline](wikination.png)
+
+#### IDF vector construction
+
+Inverse document frequency vector is constructed based on document frequency vector present in the database.
+
+#### Article TF-IDF matrix construction
+
+First, article bag of words representation present in the database is transformed in to term frequency, then each term frequency is multiplied by its inverse-document frequency.
+
+#### User history document
+
+Documents present in user's history are combined into a single large document (their bag of words are summed).
+We then transform that into TF-IDF vector.
+That way we represent user history as a single vector.
+
+#### Cosine Similarity
+
+For each article we calculate its similarity similarity to user history using cosine similarity.
 
 
+#### Recommend most similar documents
 
+We sort each article according to their similarity.
 
+User can also read the recommendation breakdown after clicking on one of the articles.
+The prediction breakdown shows percentage of how much each term contributes to final document score (similarity).
+It is calculated by dividing product TF-IDF of a given term by dot product of the user history document and the selected document.
 
