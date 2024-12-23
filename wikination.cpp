@@ -29,6 +29,7 @@ double length(double* v, int size) {
   return sqrt(total);
 }
 
+
 struct s_ui_state {
   struct Window{
     int height;
@@ -59,6 +60,9 @@ struct s_ui_state {
   SelectedDoc selected_doc;
 };
 typedef struct s_ui_state ui_state_t;
+
+void draw_ui(ui_state_t &ui, std::vector<std::string>&doc_names, int n_docs, std::vector<std::string>& words, int n_terms);
+void update(ui_state_t &ui, int n_docs, int n_terms, double**bag_of_words, double *bow_lengths, std::unordered_map<int, int> word_id_map, std::vector<double> inv_tf, std::vector<std::string> &doc_names);
 
 int main(int argc, char** argv){
   int rc = sqlite3_open("bow.db", &db);
@@ -194,168 +198,14 @@ int main(int argc, char** argv){
         SDL_GetWindowSize(window, &ui.window.width, &ui.window.height);
       }
     }
-    if(ui.query.changed){
-      ui.query.changed = false;
-      ui.history.empty = true;
-      ui.selected_doc.idx = -1;
-      for(int i = 0; i < n_terms; i++) {
-        ui.query.tf_idf[i] = 0.0;
-      }
-      for (int i = 0; i < n_docs; i++){
-        if(!ui.history.selected[i]) {
-          continue;
-        }
-        ui.history.empty = false;
-        const char* query = "SELECT t1.word_id, t1.frequency \
-                             FROM bag_of_words t1 JOIN documents t2 \
-                             WHERE t1.doc_id = t2.doc_id and t2.doc_name = ?;";
-        sqlite3_stmt* stmt;
-        rc = sqlite3_prepare_v2(db, query, -1, &stmt, 0);
-        check_resut(rc);
-        sqlite3_bind_text(stmt, 1, doc_names[i].c_str(), -1, SQLITE_STATIC);
-        while (sqlite3_step(stmt) == SQLITE_ROW) {
-          int word_id = sqlite3_column_int(stmt, 0);
-          int freq = sqlite3_column_int(stmt, 1);
-          ui.query.tf_idf[word_id_map[word_id]] +=freq;
-        }
-        sqlite3_finalize(stmt);
-      }
-      double max_freq = -1.0;
-      for(int i = 0; i < n_terms; i++) {
-        double freq = ui.query.tf_idf[i];
-        if (freq > max_freq) {
-          max_freq = freq;
-        }
-        ui.query.tf_idf[i] = freq * inv_tf[i];
-      }
-      for(int i = 0; i < n_terms; i++) {
-        ui.query.tf_idf[i] /= max_freq;
-      }
-      double q_len = length(user_query, n_terms);
-      for (int i = 0; i < n_docs; i++){
-        if(ui.history.selected[i]){
-          continue;
-        }
-        double dot_prod = 0.0;
-        for (int j = 0; j < n_terms; j++) {
-          dot_prod += bag_of_words[i][j] * ui.query.tf_idf[j];
-        }
-        ui.ranking.scores[i] = dot_prod / (bow_lengths[i] * q_len);
-      }
-      std::sort(ui.ranking.order, ui.ranking.order+n_docs, [&ui](int a, int b){
-          return ui.ranking.scores[a] > ui.ranking.scores[b];
-          });
-    }
-    if (ui.selected_doc.changed) {
-      ui.selected_doc.changed = false;
-      double total = 0.0;
-      for (int j = 0; j < n_terms; j++) {
-        double dot = bag_of_words[ui.selected_doc.idx][j] * ui.query.tf_idf[j];
-        ui.selected_doc.word_contrib[j] = dot;
-        total += dot;
-      }
-      for (int j = 0; j < n_terms; j++) {
-        ui.selected_doc.word_contrib[j] /= total;
-      }
-      std::sort(ui.selected_doc.word_order, ui.selected_doc.word_order+n_terms, [&ui](int a, int b){
-          return ui.selected_doc.word_contrib[a] > ui.selected_doc.word_contrib[b];
-          });
 
-    }
-
+    update(ui, n_docs, n_terms, bag_of_words, bow_lengths, word_id_map, inv_tf, doc_names);
 
     ImGui_ImplSDLRenderer2_NewFrame();
     ImGui_ImplSDL2_NewFrame();
     ImGui::NewFrame();
 
-    float child_width =  ui.window.width / 4.0f;
-    float child_height = ui.window.height;
-    int window_flags = ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_HorizontalScrollbar;
-
-    ImGui::SetNextWindowPos(ImVec2(0,0));
-    ImGui::SetNextWindowSize(ImVec2(child_width,child_height));
-    if(ImGui::Begin("Documents", NULL, window_flags)){
-      for (int i = 0; i < n_docs; i++) {
-        if(ui.history.selected[i]) {
-          continue;
-        }
-        std::string button_label = "+##" + std::to_string(i);
-        if (ImGui::Button(button_label.c_str())) {
-          ui.history.selected[i] = true;
-          ui.query.changed = true;
-        }
-        ImGui::SameLine();
-        ImGui::Text("%s", doc_names[i].c_str());
-      }
-    }
-    ImGui::End();
-
-    if(!ui.history.empty){
-      ImGui::SetNextWindowPos(ImVec2(child_width,0));
-      ImGui::SetNextWindowSize(ImVec2(child_width,child_height));
-      if(ImGui::Begin("History", NULL, window_flags)){
-        for (int i = 0; i < n_docs; i++) {
-          if(!ui.history.selected[i]) {
-            continue;
-          }
-          std::string button_label = "x##" + std::to_string(i);
-          if (ImGui::Button(button_label.c_str())) {
-            ui.history.selected[i] = false;
-            ui.query.changed = true;
-          }
-          ImGui::SameLine();
-          ImGui::Text("%s", doc_names[i].c_str());
-        }
-      }
-      ImGui::End();
-      ImGui::SetNextWindowPos(ImVec2(child_width * 2,0));
-      ImGui::SetNextWindowSize(ImVec2(child_width,child_height));
-      if(ImGui::Begin("Ranking", NULL, window_flags)){
-        for (int i = 0; i < n_docs; i++) {
-          int idx = ui.ranking.order[i];
-          if(ui.history.selected[idx]){
-            continue;
-          }
-          char label[64];
-          snprintf(label, sizeof(label), "%s %lf", doc_names[idx].c_str(), ui.ranking.scores[idx]);
-          if(ImGui::Selectable(label, ui.selected_doc.idx == idx)) {
-            if (ui.selected_doc.idx == i) {
-              ui.selected_doc.idx = -1;
-            } else {
-              ui.selected_doc.idx = idx;
-              ui.selected_doc.changed = true;
-            }
-          }
-        }
-      }
-      ImGui::End();
-    }
-    if(ui.selected_doc.idx != -1) {
-      ImGui::SetNextWindowPos(ImVec2(child_width * 3,0));
-      ImGui::SetNextWindowSize(ImVec2(child_width,child_height));
-      char window_name[128];
-      snprintf(window_name, sizeof(window_name), "Word Score Contribution - %s", doc_names[ui.selected_doc.idx].c_str());
-      if(ImGui::Begin(window_name, NULL, window_flags)){
-        for (int i = 0; i < n_terms; i++) {
-          int idx = ui.selected_doc.word_order[i];
-          double contrib = ui.selected_doc.word_contrib[idx];
-          if (!(contrib > 0.0)) {
-            break;
-          }
-          ImGui::Text("%s", words[idx].c_str());
-          ImGui::SameLine();
-          float margin = 125.0f;
-          ImGui::SetCursorPosX(ImGui::GetContentRegionMax().x - margin);
-          ImGui::PushStyleColor(ImGuiCol_PlotHistogram, ImVec4(0.8f-contrib, 0.2f + contrib, 0.0f, 1.0f)); 
-          char text[32];
-          snprintf(text, sizeof(text), "%.3lf%%", contrib * 100.0);
-          ImGui::ProgressBar(contrib, ImVec2(margin, 20), text);
-          ImGui::PopStyleColor();
-        }
-      }
-      ImGui::End();
-    }
-
+    draw_ui(ui, doc_names, n_docs, words, n_terms);
 
     ImGui::Render();
     SDL_RenderClear(renderer);
@@ -376,4 +226,167 @@ finish:
   delete[] scores;
   delete[] selected_document_word_contrib;
   return 0;
+}
+
+void update(ui_state_t &ui, int n_docs, int n_terms, double**bag_of_words, double *bow_lengths, std::unordered_map<int, int> word_id_map, std::vector<double> inv_tf, std::vector<std::string> &doc_names){
+  int rc;
+  if(ui.query.changed){
+    ui.query.changed = false;
+    ui.history.empty = true;
+    ui.selected_doc.idx = -1;
+    for(int i = 0; i < n_terms; i++) {
+      ui.query.tf_idf[i] = 0.0;
+    }
+    for (int i = 0; i < n_docs; i++){
+      if(!ui.history.selected[i]) {
+        continue;
+      }
+      ui.history.empty = false;
+      const char* query = "SELECT t1.word_id, t1.frequency \
+                           FROM bag_of_words t1 JOIN documents t2 \
+                           WHERE t1.doc_id = t2.doc_id and t2.doc_name = ?;";
+      sqlite3_stmt* stmt;
+      rc = sqlite3_prepare_v2(db, query, -1, &stmt, 0);
+      check_resut(rc);
+      sqlite3_bind_text(stmt, 1, doc_names[i].c_str(), -1, SQLITE_STATIC);
+      while (sqlite3_step(stmt) == SQLITE_ROW) {
+        int word_id = sqlite3_column_int(stmt, 0);
+        int freq = sqlite3_column_int(stmt, 1);
+        ui.query.tf_idf[word_id_map[word_id]] +=freq;
+      }
+      sqlite3_finalize(stmt);
+    }
+    double max_freq = -1.0;
+    for(int i = 0; i < n_terms; i++) {
+      double freq = ui.query.tf_idf[i];
+      if (freq > max_freq) {
+        max_freq = freq;
+      }
+      ui.query.tf_idf[i] = freq * inv_tf[i];
+    }
+    for(int i = 0; i < n_terms; i++) {
+      ui.query.tf_idf[i] /= max_freq;
+    }
+    double q_len = length(ui.query.tf_idf, n_terms);
+    for (int i = 0; i < n_docs; i++){
+      if(ui.history.selected[i]){
+        continue;
+      }
+      double dot_prod = 0.0;
+      for (int j = 0; j < n_terms; j++) {
+        dot_prod += bag_of_words[i][j] * ui.query.tf_idf[j];
+      }
+      ui.ranking.scores[i] = dot_prod / (bow_lengths[i] * q_len);
+    }
+    std::sort(ui.ranking.order, ui.ranking.order+n_docs, [&ui](int a, int b){
+        return ui.ranking.scores[a] > ui.ranking.scores[b];
+        });
+  }
+  if (ui.selected_doc.changed) {
+    ui.selected_doc.changed = false;
+    double total = 0.0;
+    for (int j = 0; j < n_terms; j++) {
+      double dot = bag_of_words[ui.selected_doc.idx][j] * ui.query.tf_idf[j];
+      ui.selected_doc.word_contrib[j] = dot;
+      total += dot;
+    }
+    for (int j = 0; j < n_terms; j++) {
+      ui.selected_doc.word_contrib[j] /= total;
+    }
+    std::sort(ui.selected_doc.word_order, ui.selected_doc.word_order+n_terms, [&ui](int a, int b){
+        return ui.selected_doc.word_contrib[a] > ui.selected_doc.word_contrib[b];
+        });
+
+  }
+
+}
+
+void draw_ui(ui_state_t &ui, std::vector<std::string>&doc_names, int n_docs, std::vector<std::string>& words, int n_terms){
+  float child_width =  ui.window.width / 4.0f;
+  float child_height = ui.window.height;
+  int window_flags = ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_HorizontalScrollbar;
+
+  ImGui::SetNextWindowPos(ImVec2(0,0));
+  ImGui::SetNextWindowSize(ImVec2(child_width,child_height));
+  if(ImGui::Begin("Documents", NULL, window_flags)){
+    for (int i = 0; i < n_docs; i++) {
+      if(ui.history.selected[i]) {
+        continue;
+      }
+      std::string button_label = "+##" + std::to_string(i);
+      if (ImGui::Button(button_label.c_str())) {
+        ui.history.selected[i] = true;
+        ui.query.changed = true;
+      }
+      ImGui::SameLine();
+      ImGui::Text("%s", doc_names[i].c_str());
+    }
+  }
+  ImGui::End();
+
+  if(!ui.history.empty){
+    ImGui::SetNextWindowPos(ImVec2(child_width,0));
+    ImGui::SetNextWindowSize(ImVec2(child_width,child_height));
+    if(ImGui::Begin("History", NULL, window_flags)){
+      for (int i = 0; i < n_docs; i++) {
+        if(!ui.history.selected[i]) {
+          continue;
+        }
+        std::string button_label = "x##" + std::to_string(i);
+        if (ImGui::Button(button_label.c_str())) {
+          ui.history.selected[i] = false;
+          ui.query.changed = true;
+        }
+        ImGui::SameLine();
+        ImGui::Text("%s", doc_names[i].c_str());
+      }
+    }
+    ImGui::End();
+    ImGui::SetNextWindowPos(ImVec2(child_width * 2,0));
+    ImGui::SetNextWindowSize(ImVec2(child_width,child_height));
+    if(ImGui::Begin("Ranking", NULL, window_flags)){
+      for (int i = 0; i < n_docs; i++) {
+        int idx = ui.ranking.order[i];
+        if(ui.history.selected[idx]){
+          continue;
+        }
+        char label[64];
+        snprintf(label, sizeof(label), "%s %lf", doc_names[idx].c_str(), ui.ranking.scores[idx]);
+        if(ImGui::Selectable(label, ui.selected_doc.idx == idx)) {
+          if (ui.selected_doc.idx == i) {
+            ui.selected_doc.idx = -1;
+          } else {
+            ui.selected_doc.idx = idx;
+            ui.selected_doc.changed = true;
+          }
+        }
+      }
+    }
+    ImGui::End();
+  }
+  if(ui.selected_doc.idx != -1) {
+    ImGui::SetNextWindowPos(ImVec2(child_width * 3,0));
+    ImGui::SetNextWindowSize(ImVec2(child_width,child_height));
+    char window_name[128];
+    snprintf(window_name, sizeof(window_name), "Word Score Contribution - %s", doc_names[ui.selected_doc.idx].c_str());
+    if(ImGui::Begin(window_name, NULL, window_flags)){
+      for (int i = 0; i < n_terms; i++) {
+        int idx = ui.selected_doc.word_order[i];
+        double contrib = ui.selected_doc.word_contrib[idx];
+        if (!(contrib > 0.0)) {
+          break;
+        }
+        ImGui::Text("%s", words[idx].c_str());
+        ImGui::SameLine();
+        float margin = 125.0f;
+        ImGui::SetCursorPosX(ImGui::GetContentRegionMax().x - margin);
+        ImGui::PushStyleColor(ImGuiCol_PlotHistogram, ImVec4(0.8f-contrib, 0.2f + contrib, 0.0f, 1.0f)); 
+        char text[32];
+        snprintf(text, sizeof(text), "%.3lf%%", contrib * 100.0);
+        ImGui::ProgressBar(contrib, ImVec2(margin, 20), text);
+        ImGui::PopStyleColor();
+      }
+    }
+    ImGui::End();
+  }
 }
