@@ -29,6 +29,36 @@ double length(double* v, int size) {
   return sqrt(total);
 }
 
+struct s_ui_state {
+  struct Window{
+    int height;
+    int width;
+  };
+  Window window;
+  struct Query{
+    bool changed;
+    double *tf_idf;
+  };
+  Query query;
+  struct Ranking{
+    double *scores;
+    int *order;
+  };
+  Ranking ranking;
+  struct History {
+    bool empty;
+    bool *selected;
+  };
+  History history;
+  struct SelectedDoc{
+    int idx;
+    bool changed;
+    double *word_contrib;
+    int *word_order;
+  };
+  SelectedDoc selected_doc;
+};
+typedef struct s_ui_state ui_state_t;
 
 int main(int argc, char** argv){
   int rc = sqlite3_open("bow.db", &db);
@@ -104,34 +134,46 @@ int main(int argc, char** argv){
     }
     delete[] max_freq;
   }
-  double* user_query = new double[n_terms]();
-  double *scores = new double[n_docs];
-  std::vector<int> document_order;
-  for (int i = 0; i < n_docs; i++){
-    document_order.push_back(i);
-  }
   double *bow_lengths = new double[n_terms]();
   for (int i = 0; i < n_docs; i++){
     bow_lengths[i] = length(bag_of_words[i], n_terms);
   }
-  bool selected_history[n_docs] = {false} ;
-  bool new_query = false;
-  bool something_in_history = false;
-  int selected_document = -1;
-  bool selected_document_changed = false;
-  double *selected_document_word_contrib = new double[n_terms];
-  std::vector<int> word_order;
-  for (int i = 0; i < n_terms; i++){
-    word_order.push_back(i);
+  ui_state_t ui;
+  ui.window.height = 720;
+  ui.window.width = 1280;
+
+  double* user_query = new double[n_terms]();
+  ui.query.tf_idf = user_query;
+  ui.query.changed = false;
+
+  int document_order[n_docs];
+  for (int i = 0; i < n_docs; i++){
+    document_order[i] = i;
   }
+  double *scores = new double[n_docs];
+  ui.ranking.scores = scores;
+  ui.ranking.order = document_order;
+
+  bool selected_history[n_docs] = {false} ;
+  ui.history.selected = selected_history;
+  ui.history.empty = true;
+
+  double *selected_document_word_contrib = new double[n_terms];
+  int word_order[n_terms];
+  for (int i = 0; i < n_terms; i++){
+    word_order[i] = i;
+  }
+  ui.selected_doc.idx = -1;
+  ui.selected_doc.changed = false;
+  ui.selected_doc.word_contrib = selected_document_word_contrib;
+  ui.selected_doc.word_order = word_order;
+
   SDL_Init(SDL_INIT_EVERYTHING);
 
-  int window_height = 720;
-  int window_width = 1280;
   SDL_Window* window = SDL_CreateWindow(
       "SDL2 It's Works!",
       SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
-      window_width, window_height,
+      ui.window.width, ui.window.height,
       SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE
       );
 
@@ -149,21 +191,21 @@ int main(int argc, char** argv){
       if( event.type == SDL_QUIT ){
         goto finish;
       } else if (event.type == SDL_WINDOWEVENT && event.window.event == SDL_WINDOWEVENT_SIZE_CHANGED) {
-        SDL_GetWindowSize(window, &window_width, &window_height);
+        SDL_GetWindowSize(window, &ui.window.width, &ui.window.height);
       }
     }
-    if(new_query){
-      new_query = false;
-      something_in_history = false;
-      selected_document = -1;
+    if(ui.query.changed){
+      ui.query.changed = false;
+      ui.history.empty = true;
+      ui.selected_doc.idx = -1;
       for(int i = 0; i < n_terms; i++) {
-        user_query[i] = 0.0;
+        ui.query.tf_idf[i] = 0.0;
       }
       for (int i = 0; i < n_docs; i++){
-        if(!selected_history[i]) {
+        if(!ui.history.selected[i]) {
           continue;
         }
-        something_in_history = true;
+        ui.history.empty = false;
         const char* query = "SELECT t1.word_id, t1.frequency \
                              FROM bag_of_words t1 JOIN documents t2 \
                              WHERE t1.doc_id = t2.doc_id and t2.doc_name = ?;";
@@ -174,49 +216,49 @@ int main(int argc, char** argv){
         while (sqlite3_step(stmt) == SQLITE_ROW) {
           int word_id = sqlite3_column_int(stmt, 0);
           int freq = sqlite3_column_int(stmt, 1);
-          user_query[word_id_map[word_id]] +=freq;
+          ui.query.tf_idf[word_id_map[word_id]] +=freq;
         }
         sqlite3_finalize(stmt);
       }
       double max_freq = -1.0;
       for(int i = 0; i < n_terms; i++) {
-        double freq = user_query[i];
+        double freq = ui.query.tf_idf[i];
         if (freq > max_freq) {
           max_freq = freq;
         }
-        user_query[i] = freq * inv_tf[i];
+        ui.query.tf_idf[i] = freq * inv_tf[i];
       }
       for(int i = 0; i < n_terms; i++) {
-        user_query[i] /= max_freq;
+        ui.query.tf_idf[i] /= max_freq;
       }
       double q_len = length(user_query, n_terms);
       for (int i = 0; i < n_docs; i++){
-        if(selected_history[i]){
+        if(ui.history.selected[i]){
           continue;
         }
         double dot_prod = 0.0;
         for (int j = 0; j < n_terms; j++) {
-          dot_prod += bag_of_words[i][j] * user_query[j];
+          dot_prod += bag_of_words[i][j] * ui.query.tf_idf[j];
         }
-        scores[i] = dot_prod / (bow_lengths[i] * q_len);
+        ui.ranking.scores[i] = dot_prod / (bow_lengths[i] * q_len);
       }
-      std::sort(document_order.begin(), document_order.end(), [&scores](int a, int b){
-          return scores[a] > scores[b];
+      std::sort(ui.ranking.order, ui.ranking.order+n_docs, [&ui](int a, int b){
+          return ui.ranking.scores[a] > ui.ranking.scores[b];
           });
     }
-    if (selected_document_changed) {
-      selected_document_changed = false;
+    if (ui.selected_doc.changed) {
+      ui.selected_doc.changed = false;
       double total = 0.0;
       for (int j = 0; j < n_terms; j++) {
-        double dot = bag_of_words[selected_document][j] * user_query[j];
-        selected_document_word_contrib[j] = dot;
+        double dot = bag_of_words[ui.selected_doc.idx][j] * ui.query.tf_idf[j];
+        ui.selected_doc.word_contrib[j] = dot;
         total += dot;
       }
       for (int j = 0; j < n_terms; j++) {
-        selected_document_word_contrib[j] /= total;
+        ui.selected_doc.word_contrib[j] /= total;
       }
-      std::sort(word_order.begin(), word_order.end(), [&selected_document_word_contrib](int a, int b){
-          return selected_document_word_contrib[a] > selected_document_word_contrib[b];
+      std::sort(ui.selected_doc.word_order, ui.selected_doc.word_order+n_terms, [&ui](int a, int b){
+          return ui.selected_doc.word_contrib[a] > ui.selected_doc.word_contrib[b];
           });
 
     }
@@ -226,21 +268,21 @@ int main(int argc, char** argv){
     ImGui_ImplSDL2_NewFrame();
     ImGui::NewFrame();
 
-    float child_width =  window_width / 4.0f;
-    float child_height = window_height;
+    float child_width =  ui.window.width / 4.0f;
+    float child_height = ui.window.height;
     int window_flags = ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_HorizontalScrollbar;
 
     ImGui::SetNextWindowPos(ImVec2(0,0));
     ImGui::SetNextWindowSize(ImVec2(child_width,child_height));
     if(ImGui::Begin("Documents", NULL, window_flags)){
       for (int i = 0; i < n_docs; i++) {
-        if(selected_history[i]) {
+        if(ui.history.selected[i]) {
           continue;
         }
         std::string button_label = "+##" + std::to_string(i);
         if (ImGui::Button(button_label.c_str())) {
-          selected_history[i] = true;
-          new_query = true;
+          ui.history.selected[i] = true;
+          ui.query.changed = true;
         }
         ImGui::SameLine();
         ImGui::Text("%s", doc_names[i].c_str());
@@ -248,18 +290,18 @@ int main(int argc, char** argv){
     }
     ImGui::End();
 
-    if(something_in_history){
+    if(!ui.history.empty){
       ImGui::SetNextWindowPos(ImVec2(child_width,0));
       ImGui::SetNextWindowSize(ImVec2(child_width,child_height));
       if(ImGui::Begin("History", NULL, window_flags)){
         for (int i = 0; i < n_docs; i++) {
-          if(!selected_history[i]) {
+          if(!ui.history.selected[i]) {
             continue;
           }
           std::string button_label = "x##" + std::to_string(i);
           if (ImGui::Button(button_label.c_str())) {
-            selected_history[i] = false;
-            new_query = true;
+            ui.history.selected[i] = false;
+            ui.query.changed = true;
           }
           ImGui::SameLine();
           ImGui::Text("%s", doc_names[i].c_str());
@@ -270,33 +312,34 @@ int main(int argc, char** argv){
       ImGui::SetNextWindowSize(ImVec2(child_width,child_height));
       if(ImGui::Begin("Ranking", NULL, window_flags)){
         for (int i = 0; i < n_docs; i++) {
-          if(selected_history[document_order[i]]){
+          int idx = ui.ranking.order[i];
+          if(ui.history.selected[idx]){
             continue;
           }
           char label[64];
-          snprintf(label, sizeof(label), "%s %lf", doc_names[document_order[i]].c_str(), scores[document_order[i]]);
-          if(ImGui::Selectable(label, selected_document == i)) {
-            if (selected_document == i) {
-              selected_document = -1;
+          snprintf(label, sizeof(label), "%s %lf", doc_names[idx].c_str(), ui.ranking.scores[idx]);
+          if(ImGui::Selectable(label, ui.selected_doc.idx == idx)) {
+            if (ui.selected_doc.idx == i) {
+              ui.selected_doc.idx = -1;
             } else {
-              selected_document = i;
-              selected_document_changed = true;
+              ui.selected_doc.idx = idx;
+              ui.selected_doc.changed = true;
             }
           }
         }
       }
       ImGui::End();
     }
-    if(selected_document != -1) {
+    if(ui.selected_doc.idx != -1) {
       ImGui::SetNextWindowPos(ImVec2(child_width * 3,0));
       ImGui::SetNextWindowSize(ImVec2(child_width,child_height));
       char window_name[128];
-      snprintf(window_name, sizeof(window_name), "Word Score Contribution - %s", doc_names[selected_document].c_str());
+      snprintf(window_name, sizeof(window_name), "Word Score Contribution - %s", doc_names[ui.selected_doc.idx].c_str());
       if(ImGui::Begin(window_name, NULL, window_flags)){
         for (int i = 0; i < n_terms; i++) {
-          int idx = word_order[i];
-          double contrib = selected_document_word_contrib[idx];
-          if (contrib == 0.0) {
+          int idx = ui.selected_doc.word_order[i];
+          double contrib = ui.selected_doc.word_contrib[idx];
+          if (!(contrib > 0.0)) {
             break;
           }
           ImGui::Text("%s", words[idx].c_str());
