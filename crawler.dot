@@ -1,0 +1,13 @@
+digraph G {
+  D [label="Download articles", shape=box];
+  P [label="Extract paragraphs", shape=box];
+  T [label="Tokenize", shape=box];
+  W [label="Remove stop words", shape=box];
+  L [label="Lemmatize using WordNet", shape=box];
+  B [label="Create bag of words and store it in a database", shape=box];
+  D -> P;
+  P -> T;
+  T -> W;
+  W -> L;
+  L -> B;
+}
