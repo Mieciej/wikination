@@ -61,8 +61,15 @@ struct s_ui_state {
 };
 typedef struct s_ui_state ui_state_t;
 
+struct s_doc_table_t {
+    int n;
+    std::unordered_map<int, int> id_map;
+    std::vector<std::string> names;
+};
+
+typedef struct s_doc_table_t doc_table_t;
 void draw_ui(ui_state_t &ui, std::vector<std::string>&doc_names, int n_docs, std::vector<std::string>& words, int n_terms);
-void update(ui_state_t &ui, int n_docs, int n_terms, double**tf_idf, double** bag_of_words, std::vector<double>&idf, std::unordered_map<int, int> &word_id_map, std::vector<std::string> &doc_names);
+void update(ui_state_t &ui, doc_table_t& doc_table, int n_terms, double**tf_idf, double** bag_of_words, std::vector<double>&idf, std::unordered_map<int, int> &word_id_map);
 
 int main(int argc, char** argv){
   int rc = sqlite3_open("bow.db", &db);
@@ -70,10 +77,9 @@ int main(int argc, char** argv){
     std::cerr << "Can't open database: " << sqlite3_errmsg(db) << std::endl;
     return 1;
   }
-
-  int n_docs = 0;
-  std::unordered_map<int, int> doc_id_map;
-  std::vector<std::string> doc_names;
+  // query information about documents
+  doc_table_t doc_table;
+  doc_table.n = 0;
   {
     const char* query = "SELECT doc_id, doc_name FROM documents;";
     sqlite3_stmt* stmt;
@@ -82,13 +88,13 @@ int main(int argc, char** argv){
     while (sqlite3_step(stmt) == SQLITE_ROW) {
       int doc_id = sqlite3_column_int(stmt, 0);
       std::string doc_name((const char*)sqlite3_column_text(stmt, 1));
-      doc_names.push_back(doc_name);
-      doc_id_map[doc_id] = n_docs++;
+      doc_table.names.push_back(doc_name);
+      doc_table.id_map[doc_id] = doc_table.n++;
 
     }
     sqlite3_finalize(stmt);
   }
-  std::cout << "Found " << n_docs << " documents." << std::endl;
+  std::cout << "Found " << doc_table.n << " documents." << std::endl;
   int n_terms = 0;
   std::unordered_map<int, int> word_id_map;
   std::vector<double> idf;
@@ -103,24 +109,24 @@ int main(int argc, char** argv){
       int freq = sqlite3_column_int(stmt, 1);
       std::string word((const char*)sqlite3_column_text(stmt, 2));
       word_id_map[word_id] = n_terms++;
-      double it = log((double)n_docs/(double)freq);
+      double it = log((double)doc_table.n/(double)freq);
       idf.push_back(it);
       words.push_back(word);
     }
     sqlite3_finalize(stmt);
   }
   std::cout << "Found " << n_terms << " terms." << std::endl;
-  double *mem_bag_of_words = new double[n_docs*n_terms];
-  double *mem_tf_idf = new double[n_docs*n_terms];
-  double * bag_of_words[n_docs];
+  double *mem_bag_of_words = new double[doc_table.n*n_terms];
+  double *mem_tf_idf = new double[doc_table.n*n_terms];
+  double * bag_of_words[doc_table.n];
   // It is not really tf_idf but precomputed part of cosine similarity.
-  double * tf_idf[n_docs];
-  for (int i = 0; i < n_docs; i++) {
+  double * tf_idf[doc_table.n];
+  for (int i = 0; i < doc_table.n; i++) {
     bag_of_words[i] = &mem_bag_of_words[i*n_terms];
     tf_idf[i] = &mem_tf_idf[i*n_terms];
   }
   {
-    double* max_freq = new double[n_docs]();
+    double* max_freq = new double[doc_table.n]();
     const char* query = "SELECT doc_id, word_id, frequency FROM bag_of_words;";
     sqlite3_stmt* stmt;
     rc = sqlite3_prepare_v2(db, query, -1, &stmt, 0);
@@ -129,20 +135,20 @@ int main(int argc, char** argv){
       int doc_id = sqlite3_column_int(stmt, 0);
       int word_id = sqlite3_column_int(stmt, 1);
       int freq = sqlite3_column_int(stmt, 2);
-      bag_of_words[doc_id_map[doc_id]][word_id_map[word_id]] = (double)freq;
-      tf_idf[doc_id_map[doc_id]][word_id_map[word_id]] = (double)freq * idf[word_id_map[word_id]];
+      bag_of_words[doc_table.id_map[doc_id]][word_id_map[word_id]] = (double)freq;
+      tf_idf[doc_table.id_map[doc_id]][word_id_map[word_id]] = (double)freq * idf[word_id_map[word_id]];
 
-      if (freq > max_freq[doc_id_map[doc_id]]) {
-        max_freq[doc_id_map[doc_id]] = freq;
+      if (freq > max_freq[doc_table.id_map[doc_id]]) {
+        max_freq[doc_table.id_map[doc_id]] = freq;
       }
     }
     sqlite3_finalize(stmt);
-    for (int i = 0; i < n_docs; i++) {
+    for (int i = 0; i < doc_table.n; i++) {
       for (int j = 0; j < n_terms; j++) {
         tf_idf[i][j] /= max_freq[i];
       }
     }
-    for (int i = 0; i < n_docs; i++){
+    for (int i = 0; i < doc_table.n; i++){
       double l = length(tf_idf[i], n_terms);
       for (int j = 0; j < n_terms; j++){
         tf_idf[i][j] /= l;
@@ -159,15 +165,15 @@ int main(int argc, char** argv){
   ui.query.tf_idf = user_query;
   ui.query.changed = false;
 
-  int document_order[n_docs];
-  for (int i = 0; i < n_docs; i++){
+  int document_order[doc_table.n];
+  for (int i = 0; i < doc_table.n; i++){
     document_order[i] = i;
   }
-  double *scores = new double[n_docs];
+  double *scores = new double[doc_table.n];
   ui.ranking.scores = scores;
   ui.ranking.order = document_order;
 
-  bool selected_history[n_docs] = {false} ;
+  bool selected_history[doc_table.n] = {false} ;
   ui.history.selected = selected_history;
   ui.history.empty = true;
 
@@ -208,13 +214,13 @@ int main(int argc, char** argv){
       }
     }
 
-    update(ui, n_docs, n_terms, tf_idf,bag_of_words, idf,  word_id_map, doc_names);
+    update(ui, doc_table, n_terms, tf_idf,bag_of_words, idf,  word_id_map);
 
     ImGui_ImplSDLRenderer2_NewFrame();
     ImGui_ImplSDL2_NewFrame();
     ImGui::NewFrame();
 
-    draw_ui(ui, doc_names, n_docs, words, n_terms);
+    draw_ui(ui, doc_table.names, doc_table.n, words, n_terms);
 
     ImGui::Render();
     SDL_RenderClear(renderer);
@@ -238,7 +244,7 @@ finish:
   return 0;
 }
 
-void update(ui_state_t &ui, int n_docs, int n_terms, double**tf_idf, double** bag_of_words, std::vector<double>&idf, std::unordered_map<int, int> &word_id_map, std::vector<std::string> &doc_names){
+void update(ui_state_t &ui, doc_table_t &doc_table, int n_terms, double**tf_idf, double** bag_of_words, std::vector<double>&idf, std::unordered_map<int, int> &word_id_map){
   if(ui.query.changed){
     ui.query.changed = false;
     ui.history.empty = true;
@@ -246,7 +252,7 @@ void update(ui_state_t &ui, int n_docs, int n_terms, double**tf_idf, double** ba
     for(int i = 0; i < n_terms; i++) {
       ui.query.tf_idf[i] = 0.0;
     }
-    for (int i = 0; i < n_docs; i++){
+    for (int i = 0; i < doc_table.n; i++){
       if(!ui.history.selected[i]) {
         continue;
       }
@@ -267,7 +273,7 @@ void update(ui_state_t &ui, int n_docs, int n_terms, double**tf_idf, double** ba
       ui.query.tf_idf[i] /= max_freq;
     }
     double q_len = length(ui.query.tf_idf, n_terms);
-    for (int i = 0; i < n_docs; i++){
+    for (int i = 0; i < doc_table.n; i++){
       if(ui.history.selected[i]){
         continue;
       }
@@ -277,7 +283,7 @@ void update(ui_state_t &ui, int n_docs, int n_terms, double**tf_idf, double** ba
       }
       ui.ranking.scores[i] = dot_prod / q_len;
     }
-    std::sort(ui.ranking.order, ui.ranking.order+n_docs, [&ui](int a, int b){
+    std::sort(ui.ranking.order, ui.ranking.order+doc_table.n, [&ui](int a, int b){
         return ui.ranking.scores[a] > ui.ranking.scores[b];
         });
   }
