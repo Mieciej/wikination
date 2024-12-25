@@ -62,7 +62,7 @@ struct s_ui_state {
 typedef struct s_ui_state ui_state_t;
 
 void draw_ui(ui_state_t &ui, std::vector<std::string>&doc_names, int n_docs, std::vector<std::string>& words, int n_terms);
-void update(ui_state_t &ui, int n_docs, int n_terms, double**tf_idf, std::unordered_map<int, int> word_id_map, std::vector<double> idf, std::vector<std::string> &doc_names);
+void update(ui_state_t &ui, int n_docs, int n_terms, double**tf_idf, double** bag_of_words, std::vector<double>&idf, std::unordered_map<int, int> &word_id_map, std::vector<std::string> &doc_names);
 
 int main(int argc, char** argv){
   int rc = sqlite3_open("bow.db", &db);
@@ -208,7 +208,7 @@ int main(int argc, char** argv){
       }
     }
 
-    update(ui, n_docs, n_terms, tf_idf, word_id_map, idf, doc_names);
+    update(ui, n_docs, n_terms, tf_idf,bag_of_words, idf,  word_id_map, doc_names);
 
     ImGui_ImplSDLRenderer2_NewFrame();
     ImGui_ImplSDL2_NewFrame();
@@ -238,8 +238,7 @@ finish:
   return 0;
 }
 
-void update(ui_state_t &ui, int n_docs, int n_terms, double**tf_idf, std::unordered_map<int, int> word_id_map, std::vector<double> idf, std::vector<std::string> &doc_names){
-  int rc;
+void update(ui_state_t &ui, int n_docs, int n_terms, double**tf_idf, double** bag_of_words, std::vector<double>&idf, std::unordered_map<int, int> &word_id_map, std::vector<std::string> &doc_names){
   if(ui.query.changed){
     ui.query.changed = false;
     ui.history.empty = true;
@@ -252,19 +251,9 @@ void update(ui_state_t &ui, int n_docs, int n_terms, double**tf_idf, std::unorde
         continue;
       }
       ui.history.empty = false;
-      const char* query = "SELECT t1.word_id, t1.frequency \
-                           FROM bag_of_words t1 JOIN documents t2 \
-                           WHERE t1.doc_id = t2.doc_id and t2.doc_name = ?;";
-      sqlite3_stmt* stmt;
-      rc = sqlite3_prepare_v2(db, query, -1, &stmt, 0);
-      check_resut(rc);
-      sqlite3_bind_text(stmt, 1, doc_names[i].c_str(), -1, SQLITE_STATIC);
-      while (sqlite3_step(stmt) == SQLITE_ROW) {
-        int word_id = sqlite3_column_int(stmt, 0);
-        int freq = sqlite3_column_int(stmt, 1);
-        ui.query.tf_idf[word_id_map[word_id]] +=freq;
+      for (int j = 0; j < n_terms; j++){
+        ui.query.tf_idf[j] +=bag_of_words[i][j];
       }
-      sqlite3_finalize(stmt);
     }
     double max_freq = -1.0;
     for(int i = 0; i < n_terms; i++) {
