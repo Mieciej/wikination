@@ -73,22 +73,32 @@ struct s_word_table_t{
   int n;
   std::unordered_map<int, int> id_map;
   std::vector<std::string> names;
-  std::vector<double> idf;
 };
 
 typedef struct s_word_table_t word_table_t;
 
+struct s_bag_of_words_t{
+  double **bow;
+  double **tf_idf;
+  std::vector<double> idf;
+};
+
+typedef struct s_bag_of_words_t bag_of_words_table_t;
+
 void draw_ui(ui_state_t &ui, doc_table_t& doc_table, word_table_t& word_table);
-void update(ui_state_t &ui, doc_table_t &doc_table, word_table_t &word_table, double**tf_idf, double** bag_of_words);
+void update(ui_state_t &ui, doc_table_t &doc_table, word_table_t &word_table, bag_of_words_table_t &bow_table);
 
 int main(int argc, char** argv){
   int rc = sqlite3_open("bow.db", &db);
+  doc_table_t doc_table;
+  word_table_t word_table;
+  bag_of_words_table_t bow_table;
+  ui_state_t ui;
   if (rc) {
     std::cerr << "Can't open database: " << sqlite3_errmsg(db) << std::endl;
     return 1;
   }
   // query information about documents
-  doc_table_t doc_table;
   doc_table.n = 0;
   {
     const char* query = "SELECT doc_id, doc_name FROM documents;";
@@ -105,7 +115,6 @@ int main(int argc, char** argv){
     sqlite3_finalize(stmt);
   }
   std::cout << "Found " << doc_table.n << " documents." << std::endl;
-  word_table_t word_table;
   word_table.n= 0;
 
   {
@@ -119,21 +128,23 @@ int main(int argc, char** argv){
       std::string word((const char*)sqlite3_column_text(stmt, 2));
       word_table.id_map[word_id] = word_table.n++;
       double it = log((double)doc_table.n/(double)freq);
-      word_table.idf.push_back(it);
+      bow_table.idf.push_back(it);
       word_table.names.push_back(word);
     }
     sqlite3_finalize(stmt);
   }
   std::cout << "Found " << word_table.n << " terms." << std::endl;
+
   double *mem_bag_of_words = new double[doc_table.n*word_table.n];
   double *mem_tf_idf = new double[doc_table.n*word_table.n];
-  double * bag_of_words[doc_table.n];
-  // It is not really tf_idf but precomputed part of cosine similarity.
-  double * tf_idf[doc_table.n];
+  double * repoint_bag_of_words[doc_table.n];
+  double * repoint_tf_idf[doc_table.n];
   for (int i = 0; i < doc_table.n; i++) {
-    bag_of_words[i] = &mem_bag_of_words[i*word_table.n];
-    tf_idf[i] = &mem_tf_idf[i*word_table.n];
+    repoint_bag_of_words[i] = &mem_bag_of_words[i*word_table.n];
+    repoint_tf_idf[i] = &mem_tf_idf[i*word_table.n];
   }
+  bow_table.bow = repoint_bag_of_words;
+  bow_table.tf_idf = repoint_tf_idf;
   {
     double* max_freq = new double[doc_table.n]();
     const char* query = "SELECT doc_id, word_id, frequency FROM bag_of_words;";
@@ -144,8 +155,8 @@ int main(int argc, char** argv){
       int doc_id = sqlite3_column_int(stmt, 0);
       int word_id = sqlite3_column_int(stmt, 1);
       int freq = sqlite3_column_int(stmt, 2);
-      bag_of_words[doc_table.id_map[doc_id]][word_table.id_map[word_id]] = (double)freq;
-      tf_idf[doc_table.id_map[doc_id]][word_table.id_map[word_id]] = (double)freq * word_table.idf[word_table.id_map[word_id]];
+      bow_table.bow[doc_table.id_map[doc_id]][word_table.id_map[word_id]] = (double)freq;
+      bow_table.tf_idf[doc_table.id_map[doc_id]][word_table.id_map[word_id]] = (double)freq * bow_table.idf[word_table.id_map[word_id]];
 
       if (freq > max_freq[doc_table.id_map[doc_id]]) {
         max_freq[doc_table.id_map[doc_id]] = freq;
@@ -154,19 +165,18 @@ int main(int argc, char** argv){
     sqlite3_finalize(stmt);
     for (int i = 0; i < doc_table.n; i++) {
       for (int j = 0; j < word_table.n; j++) {
-        tf_idf[i][j] /= max_freq[i];
+        bow_table.tf_idf[i][j] /= max_freq[i];
       }
     }
     for (int i = 0; i < doc_table.n; i++){
-      double l = length(tf_idf[i], word_table.n);
+      double l = length(bow_table.tf_idf[i], word_table.n);
       for (int j = 0; j < word_table.n; j++){
-        tf_idf[i][j] /= l;
+        bow_table.tf_idf[i][j] /= l;
       }
     }
     delete[] max_freq;
   }
 
-  ui_state_t ui;
   ui.window.height = 720;
   ui.window.width = 1280;
 
@@ -223,7 +233,7 @@ int main(int argc, char** argv){
       }
     }
 
-    update(ui, doc_table, word_table, tf_idf, bag_of_words);
+    update(ui, doc_table, word_table, bow_table);
 
     ImGui_ImplSDLRenderer2_NewFrame();
     ImGui_ImplSDL2_NewFrame();
@@ -253,7 +263,7 @@ finish:
   return 0;
 }
 
-void update(ui_state_t &ui, doc_table_t &doc_table, word_table_t &word_table, double**tf_idf, double** bag_of_words){
+void update(ui_state_t &ui, doc_table_t &doc_table, word_table_t &word_table, bag_of_words_table_t &bow_table){
   if(ui.query.changed){
     ui.query.changed = false;
     ui.history.empty = true;
@@ -267,7 +277,7 @@ void update(ui_state_t &ui, doc_table_t &doc_table, word_table_t &word_table, do
       }
       ui.history.empty = false;
       for (int j = 0; j < word_table.n; j++){
-        ui.query.tf_idf[j] +=bag_of_words[i][j];
+        ui.query.tf_idf[j] += bow_table.bow[i][j];
       }
     }
     double max_freq = -1.0;
@@ -276,7 +286,7 @@ void update(ui_state_t &ui, doc_table_t &doc_table, word_table_t &word_table, do
       if (freq > max_freq) {
         max_freq = freq;
       }
-      ui.query.tf_idf[i] = freq * word_table.idf[i];
+      ui.query.tf_idf[i] = freq * bow_table.idf[i];
     }
     for(int i = 0; i < word_table.n; i++) {
       ui.query.tf_idf[i] /= max_freq;
@@ -288,7 +298,7 @@ void update(ui_state_t &ui, doc_table_t &doc_table, word_table_t &word_table, do
       }
       double dot_prod = 0.0;
       for (int j = 0; j < word_table.n; j++) {
-        dot_prod += tf_idf[i][j] * ui.query.tf_idf[j];
+        dot_prod += bow_table.tf_idf[i][j] * ui.query.tf_idf[j];
       }
       ui.ranking.scores[i] = dot_prod / q_len;
     }
@@ -300,7 +310,7 @@ void update(ui_state_t &ui, doc_table_t &doc_table, word_table_t &word_table, do
     ui.selected_doc.changed = false;
     double total = 0.0;
     for (int j = 0; j < word_table.n; j++) {
-      double dot = tf_idf[ui.selected_doc.idx][j] * ui.query.tf_idf[j];
+      double dot = bow_table.tf_idf[ui.selected_doc.idx][j] * ui.query.tf_idf[j];
       ui.selected_doc.word_contrib[j] = dot;
       total += dot;
     }
