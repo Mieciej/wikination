@@ -78,7 +78,7 @@ struct s_word_table_t{
 
 typedef struct s_word_table_t word_table_t;
 
-void draw_ui(ui_state_t &ui, std::vector<std::string>&doc_names, int n_docs, std::vector<std::string>& words, int n_terms);
+void draw_ui(ui_state_t &ui, doc_table_t& doc_table, word_table_t& word_table);
 void update(ui_state_t &ui, doc_table_t &doc_table, word_table_t &word_table, double**tf_idf, double** bag_of_words);
 
 int main(int argc, char** argv){
@@ -229,7 +229,7 @@ int main(int argc, char** argv){
     ImGui_ImplSDL2_NewFrame();
     ImGui::NewFrame();
 
-    draw_ui(ui, doc_table.names, doc_table.n, word_table.names, word_table.n);
+    draw_ui(ui, doc_table, word_table);
 
     ImGui::Render();
     SDL_RenderClear(renderer);
@@ -315,7 +315,7 @@ void update(ui_state_t &ui, doc_table_t &doc_table, word_table_t &word_table, do
 
 }
 
-void draw_ui(ui_state_t &ui, std::vector<std::string>&doc_names, int n_docs, std::vector<std::string>& words, int n_terms){
+void draw_ui(ui_state_t &ui, doc_table_t& doc_table, word_table_t& word_table) {
   float child_width =  ui.window.width / 4.0f;
   float child_height = ui.window.height;
   int window_flags = ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_HorizontalScrollbar;
@@ -323,7 +323,7 @@ void draw_ui(ui_state_t &ui, std::vector<std::string>&doc_names, int n_docs, std
   ImGui::SetNextWindowPos(ImVec2(0,0));
   ImGui::SetNextWindowSize(ImVec2(child_width,child_height));
   if(ImGui::Begin("Documents", NULL, window_flags)){
-    for (int i = 0; i < n_docs; i++) {
+    for (int i = 0; i < doc_table.n; i++) {
       if(ui.history.selected[i]) {
         continue;
       }
@@ -333,7 +333,7 @@ void draw_ui(ui_state_t &ui, std::vector<std::string>&doc_names, int n_docs, std
         ui.query.changed = true;
       }
       ImGui::SameLine();
-      ImGui::Text("%s", doc_names[i].c_str());
+      ImGui::Text("%s", doc_table.names[i].c_str());
     }
   }
   ImGui::End();
@@ -342,7 +342,7 @@ void draw_ui(ui_state_t &ui, std::vector<std::string>&doc_names, int n_docs, std
     ImGui::SetNextWindowPos(ImVec2(child_width,0));
     ImGui::SetNextWindowSize(ImVec2(child_width,child_height));
     if(ImGui::Begin("History", NULL, window_flags)){
-      for (int i = 0; i < n_docs; i++) {
+      for (int i = 0; i < doc_table.n; i++) {
         if(!ui.history.selected[i]) {
           continue;
         }
@@ -352,20 +352,20 @@ void draw_ui(ui_state_t &ui, std::vector<std::string>&doc_names, int n_docs, std
           ui.query.changed = true;
         }
         ImGui::SameLine();
-        ImGui::Text("%s", doc_names[i].c_str());
+        ImGui::Text("%s", doc_table.names[i].c_str());
       }
     }
     ImGui::End();
     ImGui::SetNextWindowPos(ImVec2(child_width * 2,0));
     ImGui::SetNextWindowSize(ImVec2(child_width,child_height));
     if(ImGui::Begin("Ranking", NULL, window_flags)){
-      for (int i = 0; i < n_docs; i++) {
+      for (int i = 0; i < doc_table.n; i++) {
         int idx = ui.ranking.order[i];
         if(ui.history.selected[idx]){
           continue;
         }
         char label[64];
-        snprintf(label, sizeof(label), "%s %lf", doc_names[idx].c_str(), ui.ranking.scores[idx]);
+        snprintf(label, sizeof(label), "%s %lf", doc_table.names[idx].c_str(), ui.ranking.scores[idx]);
         if(ImGui::Selectable(label, ui.selected_doc.idx == idx)) {
           if (ui.selected_doc.idx == i) {
             ui.selected_doc.idx = -1;
@@ -382,15 +382,15 @@ void draw_ui(ui_state_t &ui, std::vector<std::string>&doc_names, int n_docs, std
     ImGui::SetNextWindowPos(ImVec2(child_width * 3,0));
     ImGui::SetNextWindowSize(ImVec2(child_width,child_height));
     char window_name[128];
-    snprintf(window_name, sizeof(window_name), "Word Score Contribution - %s", doc_names[ui.selected_doc.idx].c_str());
+    snprintf(window_name, sizeof(window_name), "Word Score Contribution - %s", doc_table.names[ui.selected_doc.idx].c_str());
     if(ImGui::Begin(window_name, NULL, window_flags)){
-      for (int i = 0; i < n_terms; i++) {
+      for (int i = 0; i < word_table.n; i++) {
         int idx = ui.selected_doc.word_order[i];
         double contrib = ui.selected_doc.word_contrib[idx];
         if (!(contrib > 0.0)) {
           break;
         }
-        ImGui::Text("%s", words[idx].c_str());
+        ImGui::Text("%s", word_table.names[idx].c_str());
         ImGui::SameLine();
         float margin = 125.0f;
         ImGui::SetCursorPosX(ImGui::GetContentRegionMax().x - margin);
