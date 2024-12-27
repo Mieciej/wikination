@@ -1,6 +1,6 @@
 ## Build instructions
 
-Fist populate database dependencies:
+First populate the database:
 
 ```bash
 python3 -m venv .venv
@@ -9,7 +9,7 @@ pip install -r requirements.txt
 python crawler.py
 ```
 
-The commands above will take a few minutes to create article database.
+The commands above will take a few minutes to create the database.
 
 Then download and install wikination dependencies:
 
