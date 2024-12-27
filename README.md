@@ -25,4 +25,4 @@ Build wikination:
 make
 ```
 
-You can then start the wikination executable and explore the database using
+You can then start the wikination executable.
