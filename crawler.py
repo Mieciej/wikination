@@ -16,6 +16,10 @@ N_SITES = 1000
 
 con = sqlite3.connect("bow.db")
 cur = con.cursor()
+with open("create_data_base.sql", "r") as file:
+    cur.executescript(file.read())
+
+
 res = cur.execute("SELECT doc_name from documents")
 downloaded = [x[0] for x in res.fetchall()]
 if downloaded:
