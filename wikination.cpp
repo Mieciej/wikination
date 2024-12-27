@@ -58,6 +58,15 @@ struct s_ui_state {
     int *word_order;
   };
   SelectedDoc selected_doc;
+
+  struct StatDoc{
+    int idx;
+    bool changed;
+    int *word_order;
+    int *doc_order;
+    double *scores;
+  };
+  StatDoc stat_doc;
 };
 typedef struct s_ui_state ui_state_t;
 
@@ -85,7 +94,7 @@ struct s_bag_of_words_t{
 
 typedef struct s_bag_of_words_t bag_of_words_table_t;
 
-void draw_ui(ui_state_t &ui, doc_table_t& doc_table, word_table_t& word_table);
+void draw_ui(ui_state_t &ui, doc_table_t& doc_table, word_table_t& word_table, bag_of_words_table_t &bow_table);
 void update(ui_state_t &ui, doc_table_t &doc_table, word_table_t &word_table, bag_of_words_table_t &bow_table);
 
 int main(int argc, char** argv){
@@ -184,32 +193,43 @@ int main(int argc, char** argv){
   ui.query.tf_idf = user_query;
   ui.query.changed = false;
 
-  int document_order[doc_table.n];
+  int recommend_doc_order[doc_table.n];
+  int stat_doc_order[doc_table.n];
   for (int i = 0; i < doc_table.n; i++){
-    document_order[i] = i;
+    recommend_doc_order[i] = i;
+    stat_doc_order[i] = i;
   }
-  double *scores = new double[doc_table.n];
-  ui.ranking.scores = scores;
-  ui.ranking.order = document_order;
+  double *rec_scores = new double[doc_table.n];
+  ui.ranking.scores = rec_scores;
+  ui.ranking.order = recommend_doc_order;
 
   bool selected_history[doc_table.n] = {false} ;
   ui.history.selected = selected_history;
   ui.history.empty = true;
 
   double *selected_document_word_contrib = new double[word_table.n];
-  int word_order[word_table.n];
+  int selected_doc_word_order[word_table.n];
+  int stat_doc_word_order[word_table.n];
   for (int i = 0; i < word_table.n; i++){
-    word_order[i] = i;
+    selected_doc_word_order[i] = i;
+    stat_doc_word_order[i] = i;
   }
   ui.selected_doc.idx = -1;
   ui.selected_doc.changed = false;
   ui.selected_doc.word_contrib = selected_document_word_contrib;
-  ui.selected_doc.word_order = word_order;
+  ui.selected_doc.word_order = selected_doc_word_order;
+
+  ui.stat_doc.idx = 0;
+  ui.stat_doc.changed = true;
+  ui.stat_doc.word_order = stat_doc_word_order;
+  ui.stat_doc.doc_order = stat_doc_order;
+  double stat_scores[doc_table.n] = {0.0};
+  ui.stat_doc.scores = stat_scores;
 
   SDL_Init(SDL_INIT_EVERYTHING);
 
   SDL_Window* window = SDL_CreateWindow(
-      "SDL2 It's Works!",
+      "Wikination",
       SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
       ui.window.width, ui.window.height,
       SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE
@@ -239,7 +259,7 @@ int main(int argc, char** argv){
     ImGui_ImplSDL2_NewFrame();
     ImGui::NewFrame();
 
-    draw_ui(ui, doc_table, word_table);
+    draw_ui(ui, doc_table, word_table, bow_table);
 
     ImGui::Render();
     SDL_RenderClear(renderer);
@@ -258,7 +278,7 @@ finish:
   delete[] mem_bag_of_words;
   delete[] mem_tf_idf;
   delete[] user_query;
-  delete[] scores;
+  delete[] rec_scores;
   delete[] selected_document_word_contrib;
   return 0;
 }
@@ -320,12 +340,30 @@ void update(ui_state_t &ui, doc_table_t &doc_table, word_table_t &word_table, ba
     std::sort(ui.selected_doc.word_order, ui.selected_doc.word_order+word_table.n, [&ui](int a, int b){
         return ui.selected_doc.word_contrib[a] > ui.selected_doc.word_contrib[b];
         });
-
+  }
+  if (ui.stat_doc.changed) {
+    ui.stat_doc.changed = false;
+    std::sort(ui.stat_doc.word_order, ui.stat_doc.word_order+word_table.n, [&bow_table, &ui](int a, int b){
+        return bow_table.bow[ui.stat_doc.idx][a] > bow_table.bow[ui.stat_doc.idx][b];
+        });
+    for (int i = 0; i < doc_table.n; i++) {
+      if (i == ui.stat_doc.idx) {
+        continue;
+      }
+      double s = 0.0;
+      for (int j = 0; j < word_table.n; j++) {
+         s += bow_table.tf_idf[ui.stat_doc.idx][j] * bow_table.tf_idf[i][j];
+      }
+      ui.stat_doc.scores[i] = s;
+    }
+    std::sort(ui.stat_doc.doc_order, ui.stat_doc.doc_order+doc_table.n, [&ui](int a, int b){
+        return ui.stat_doc.scores[a] > ui.stat_doc.scores[b];
+        });
   }
 
 }
 
-void draw_ui(ui_state_t &ui, doc_table_t& doc_table, word_table_t& word_table) {
+void draw_ui(ui_state_t &ui, doc_table_t& doc_table, word_table_t& word_table, bag_of_words_table_t &bow_table) {
   int window_flags = ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_HorizontalScrollbar;
 
   ImGui::SetNextWindowPos(ImVec2(0,0));
@@ -375,7 +413,7 @@ void draw_ui(ui_state_t &ui, doc_table_t& doc_table, word_table_t& word_table) {
         ImGui::EndChild();
         ImGui::SameLine();
         if(ImGui::BeginChild("Ranking", ImVec2(child_width, child_height), ImGuiChildFlags_None, window_flags)){
-          ImGui::SeparatorText("Ranking");
+          ImGui::SeparatorText("Recommendation");
           ImGui::BeginChild("Scrollable");
           for (int i = 0; i < doc_table.n; i++) {
             int idx = ui.ranking.order[i];
@@ -399,10 +437,8 @@ void draw_ui(ui_state_t &ui, doc_table_t& doc_table, word_table_t& word_table) {
       }
       ImGui::SameLine();
       if(ui.selected_doc.idx != -1) {
-        char window_name[128];
-        snprintf(window_name, sizeof(window_name), "Word Score Contribution - %s", doc_table.names[ui.selected_doc.idx].c_str());
-        if(ImGui::BeginChild(window_name, ImVec2(child_width, child_height), ImGuiChildFlags_None, window_flags)){
-          ImGui::SeparatorText(window_name);
+        if(ImGui::BeginChild("Word score contribution", ImVec2(child_width, child_height), ImGuiChildFlags_None, window_flags)){
+          ImGui::SeparatorText("Word score contribution");
           ImGui::BeginChild("Scrollable");
           for (int i = 0; i < word_table.n; i++) {
             int idx = ui.selected_doc.word_order[i];
@@ -412,12 +448,12 @@ void draw_ui(ui_state_t &ui, doc_table_t& doc_table, word_table_t& word_table) {
             }
             ImGui::Text("%s", word_table.names[idx].c_str());
             ImGui::SameLine();
-            float margin = 125.0f;
+            float margin = child_width * 0.5;
             ImGui::SetCursorPosX(ImGui::GetContentRegionMax().x - margin);
             ImGui::PushStyleColor(ImGuiCol_PlotHistogram, ImVec4(0.8f-contrib, 0.2f + contrib, 0.0f, 1.0f)); 
             char text[32];
             snprintf(text, sizeof(text), "%.3lf%%", contrib * 100.0);
-            ImGui::ProgressBar(contrib, ImVec2(margin, 20), text);
+            ImGui::ProgressBar(contrib, ImVec2(margin*0.9, 20), text);
             ImGui::PopStyleColor();
           }
           ImGui::EndChild();
@@ -428,7 +464,58 @@ void draw_ui(ui_state_t &ui, doc_table_t& doc_table, word_table_t& word_table) {
     }
     }
     if(ImGui::BeginTabItem("Statistics")){
-      ImGui::Text("Test");
+      float child_width =  ImGui::GetContentRegionAvail().x / 3.0f;
+      float child_height = ImGui::GetContentRegionAvail().y;
+      if(ImGui::BeginChild("FreqTerms", ImVec2(child_width, child_height), ImGuiChildFlags_None, window_flags)){
+        ImGui::SeparatorText("Select a document");
+        ImGui::BeginChild("Scrollable");
+        for (int i = 0; i < doc_table.n; i++) {
+          if(ImGui::Selectable(doc_table.names[i].c_str(), ui.stat_doc.idx == i)){
+            if (i!=ui.stat_doc.idx){
+              ui.stat_doc.changed = true;
+            }
+            ui.stat_doc.idx = i;
+          }
+        }
+        ImGui::EndChild();
+      }
+      ImGui::EndChild();
+      ImGui::SameLine();
+      if(ImGui::BeginChild("Documents", ImVec2(child_width, child_height), ImGuiChildFlags_None, window_flags)){
+        ImGui::SeparatorText("Most frequent terms");
+        ImGui::BeginChild("Scrollable");
+        double top_freq = bow_table.bow[ui.stat_doc.idx][ui.stat_doc.word_order[0]];
+        for (int i = 0; i < word_table.n; i++) {
+          int idx = ui.stat_doc.word_order[i];
+          double freq = bow_table.bow[ui.stat_doc.idx][idx];
+          if (!(freq > 0.0)) {
+            break;
+          }
+          ImGui::Text("%s", word_table.names[idx].c_str());
+          ImGui::SameLine();
+          double proportion = freq/top_freq;
+          float margin = child_width*0.5;
+          ImGui::SetCursorPosX(ImGui::GetContentRegionMax().x - margin);
+          ImGui::PushStyleColor(ImGuiCol_PlotHistogram, ImVec4(0.8f-proportion, 0.2f + proportion, 0.0f, 1.0f)); 
+          char text[32];
+          snprintf(text, sizeof(text), "%d", (int)freq);
+          ImGui::ProgressBar(proportion, ImVec2(margin*0.9, 20), text);
+          ImGui::PopStyleColor();
+        }
+        ImGui::EndChild();
+      }
+      ImGui::EndChild();
+      ImGui::SameLine();
+      if(ImGui::BeginChild("Ranking", ImVec2(child_width, child_height), ImGuiChildFlags_None, window_flags)){
+        ImGui::SeparatorText("Most similar documents");
+        ImGui::BeginChild("Scrollable");
+        for (int i = 0; i < doc_table.n; i++) {
+          int idx = ui.stat_doc.doc_order[i];
+          ImGui::Text("%s %.2lf", doc_table.names[idx].c_str(), ui.stat_doc.scores[idx]);
+        }
+        ImGui::EndChild();
+      }
+      ImGui::EndChild();
       ImGui::EndTabItem();
     }
     ImGui::EndTabBar();
