@@ -314,7 +314,7 @@ void update(ui_state_t &ui, doc_table_t &doc_table, word_table_t &word_table, ba
     double q_len = length(ui.query.tf_idf, word_table.n);
     for (int i = 0; i < doc_table.n; i++){
       if(ui.history.selected[i]){
-        continue;
+        ui.ranking.scores = -1.0;
       }
       double dot_prod = 0.0;
       for (int j = 0; j < word_table.n; j++) {

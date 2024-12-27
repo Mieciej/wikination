@@ -116,3 +116,22 @@ The terms crucial for recommending the article are: `unix` (Ken Thompson is one 
 
 
 ### Example 2
+
+![Example of recommendation - Kakoune](pred3.png)
+
+If we look at second recommendation example we can see that user looked through 4 articles: Geany, Emacs, Vi, VIM.
+The most recommended article is Kakoun (terminal based text editor) with similarity `0.27`.
+The most important terms were `vi` and `editor`.
+
+![Example of recommendation - Richard Stallman](pred4.png)
+
+The second recommended artilce is about Richard Stallman, GNU creator, FSF founder and EMACS creator so it makes sense that second most important term for recommendation is `emacs`.
+
+## Article database analysis
+
+Wikination provides convenient way to analyse documents present in the database.
+As an example let's look at the analysis of ALGOL article.
+
+![Analysis of ALGOL article](analysis.png)
+
+The most frequent term in the article is `algol`, the most similar articles are `ALGOL_60` and `ALGOL_68`.
