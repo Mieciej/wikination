@@ -101,3 +101,18 @@ User can also read the recommendation breakdown after clicking on one of the art
 The prediction breakdown shows percentage of how much each term contributes to final document score (similarity).
 It is calculated by dividing product TF-IDF of a given term by dot product of the user history document and the selected document.
 
+## Recommendation analysis
+
+### Example 1
+![Example of recommendation - UNIX](pred1.png)
+
+If we look at first recommendation example we can see that user looked through 4 articles: Dennis Ritchie, Unix-like, Single UNIX specification, Object code.
+The most recommended article is Unix with similarity of `0.64`.
+The recommendation is justified by term importance histogram, the most contributing term to the recommendation is word `unix`, which is quite understandable.
+
+![Example of recommendation - Ken Thompson](pred1.png)
+The second recommended article is about Ken Thompson.
+The terms crucial for recommending the article are: `unix` (Ken Thompson is one of the creators of UNIX), `thompson` and `ritchie`.
+
+
+### Example 2

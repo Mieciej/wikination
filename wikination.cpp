@@ -438,7 +438,8 @@ void draw_ui(ui_state_t &ui, doc_table_t& doc_table, word_table_t& word_table, b
       ImGui::SameLine();
       if(ui.selected_doc.idx != -1) {
         if(ImGui::BeginChild("Word score contribution", ImVec2(child_width, child_height), ImGuiChildFlags_None, window_flags)){
-          ImGui::SeparatorText("Word score contribution");
+          std::string t =  doc_table.names[ui.selected_doc.idx] + " - term importance ";
+          ImGui::SeparatorText(t.c_str());
           ImGui::BeginChild("Scrollable");
           for (int i = 0; i < word_table.n; i++) {
             int idx = ui.selected_doc.word_order[i];
