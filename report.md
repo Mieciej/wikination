@@ -1,4 +1,6 @@
-# Wikination - Wikipedia Recommender System
+% Wikination - Wikipedia Recommender System
+% Maciej Janicki, Jakub Kubiak
+% December 28, 2024
 
 Wikination is wikipedia article recommendation system.
 
@@ -16,7 +18,7 @@ Crawler is responsible for crawling the Wikipedia, downloading articles and crea
 
 #### Downloading articles
 
-Given a start article, by default about [C programming language](https://en.wikipedia.org/wiki/C_(programming_language), crawler scans the page looking for links to other articles and explores them using breadth-first search.
+Given a start article, by default about C programming language, crawler scans the page looking for links to other articles and explores them using breadth-first search.
 
 #### Extracting paragraphs
 
