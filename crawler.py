@@ -93,9 +93,11 @@ res = cur.execute("""SELECT t1.doc_id, t1.doc_text FROM documents t1
                   """  )
 
 documents_to_process = res.fetchall()
+i = 0
 for document_to_process in documents_to_process:
+    i+=1
     doc_id, doc_text = document_to_process
-    print(doc_id)
+    print(f"{i}/{N_SITES}")
     parsed = bs4.BeautifulSoup(doc_text, "html.parser")
     # Remove citation marks
     for e in parsed.find_all('sup', class_="reference"):
